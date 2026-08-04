@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   postgres:
     image: ankane/pgvector:latest
@@ -31,3 +30,25 @@ services:
     environment:
       - SERVICES=s3,sqs
       - AWS_DEFAULT_REGION=us-east-1
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+      - keycloak
+      - localstack
+    environment:
+      SPRING_PROFILES_ACTIVE: default
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - api-gateway
