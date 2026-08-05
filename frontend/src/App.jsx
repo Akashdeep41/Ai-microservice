@@ -22,6 +22,8 @@ function App() {
   const [chatInput, setChatInput] = useState('')
   const [chatAnswer, setChatAnswer] = useState('')
   const [loadingDoc, setLoadingDoc] = useState(false)
+  const [speechStatus, setSpeechStatus] = useState('idle')
+  const [speechError, setSpeechError] = useState('')
 
   const login = () => keycloak.login({ redirectUri: window.location.origin })
   const logout = () => keycloak.logout({ redirectUri: window.location.origin })
@@ -131,6 +133,42 @@ function App() {
     }
   }
 
+  const speakText = (text, label) => {
+    setSpeechError('')
+
+    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setSpeechError('Text-to-speech is not available in this browser.')
+      return
+    }
+
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = 1
+    utterance.pitch = 1
+    utterance.volume = 1
+
+    utterance.onstart = () => setSpeechStatus(`Speaking ${label}`)
+    utterance.onend = () => setSpeechStatus('idle')
+    utterance.onerror = () => {
+      setSpeechStatus('idle')
+      setSpeechError('Voice playback failed. Please try again.')
+    }
+
+    try {
+      window.speechSynthesis.speak(utterance)
+    } catch (error) {
+      setSpeechError('Unable to start voice playback.')
+      setSpeechStatus('idle')
+    }
+  }
+
+  const stopSpeech = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+    setSpeechStatus('idle')
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-8 sm:px-8 lg:px-10 lg:py-10">
@@ -209,6 +247,38 @@ function App() {
                   <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Podcast-style script</p>
                   <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-200">{result.podcastScript}</p>
                 </div>
+
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => speakText(result.summary, 'summary')}
+                    className="rounded-full border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/20"
+                  >
+                    Listen to summary
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => speakText(result.podcastScript, 'podcast script')}
+                    className="rounded-full border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/20"
+                  >
+                    Listen to script
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopSpeech}
+                    disabled={speechStatus === 'idle'}
+                    className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-400 hover:text-cyan-300 disabled:opacity-50"
+                  >
+                    Stop voice
+                  </button>
+                </div>
+
+                {speechStatus !== 'idle' && (
+                  <p className="mt-3 text-sm text-slate-400">{speechStatus}</p>
+                )}
+                {speechError && (
+                  <p className="mt-3 text-sm text-rose-300">{speechError}</p>
+                )}
 
                 <div className="mt-6 flex flex-wrap gap-2">
                   {result.tags?.map((tag) => (
