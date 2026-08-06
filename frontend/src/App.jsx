@@ -1,6 +1,6 @@
 import { useKeycloak } from '@react-keycloak/web'
 import axios from 'axios'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const statusStyles = {
   success: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300',
@@ -24,6 +24,10 @@ function App() {
   const [loadingDoc, setLoadingDoc] = useState(false)
   const [speechStatus, setSpeechStatus] = useState('idle')
   const [speechError, setSpeechError] = useState('')
+  const [listening, setListening] = useState(false)
+  const [voicePrompt, setVoicePrompt] = useState('')
+  const [recognitionSupported, setRecognitionSupported] = useState(false)
+  const recognitionRef = useRef(null)
 
   const login = () => keycloak.login({ redirectUri: window.location.origin })
   const logout = () => keycloak.logout({ redirectUri: window.location.origin })
@@ -58,6 +62,50 @@ function App() {
       message: 'Your session is active. Upload a PDF and DocuCast AI will turn it into a podcast-style experience.',
     })
   }, [initialized, keycloak.authenticated, keycloak.clientId, keycloak.realm, keycloak.tokenParsed?.preferred_username])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'en-US'
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    recognition.continuous = false
+
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript || ''
+      setListening(false)
+      setSpeechStatus('Voice query received')
+      setVoicePrompt(transcript)
+      setChatInput(transcript)
+      if (transcript.trim()) {
+        sendChat(transcript, true)
+      }
+    }
+
+    recognition.onerror = (event) => {
+      setListening(false)
+      setSpeechStatus('idle')
+      setSpeechError('Voice capture failed: ' + (event.error || 'unknown error'))
+    }
+
+    recognition.onend = () => {
+      setListening(false)
+      if (speechStatus === 'Listening for your question...') {
+        setSpeechStatus('idle')
+      }
+    }
+
+    recognitionRef.current = recognition
+    setRecognitionSupported(true)
+  }, [])
 
   const handleUpload = async (event) => {
     event.preventDefault()
@@ -110,27 +158,74 @@ function App() {
     }
   }
 
-  const handleChat = async (event) => {
-    event.preventDefault()
-    if (!result || !chatInput.trim()) {
+  const sendChat = async (question, autoSpeak = true) => {
+    if (!result || !question?.trim()) {
       return
     }
 
     try {
       const response = await axios.post('/api/documents/chat', {
         documentId: result.id,
-        question: chatInput,
+        question,
       }, {
         headers: {
           Authorization: `Bearer ${keycloak.token}`,
         },
       })
 
-      setChatAnswer(response.data.answer)
+      const answer = response.data.answer
+      setChatAnswer(answer)
       setChatInput('')
+      setVoicePrompt('')
+
+      if (autoSpeak) {
+        speakText(answer, 'assistant answer')
+      }
+
+      return answer
     } catch (error) {
-      setChatAnswer('The chat service could not respond right now. Please try again.')
+      const fallback = 'The chat service could not respond right now. Please try again.'
+      setChatAnswer(fallback)
+      return null
     }
+  }
+
+  const handleChat = async (event) => {
+    event.preventDefault()
+    if (!result || !chatInput.trim()) {
+      return
+    }
+
+    await sendChat(chatInput, true)
+  }
+
+  const startListening = () => {
+    setSpeechError('')
+    if (!recognitionSupported || !recognitionRef.current) {
+      setSpeechError('Voice input is not supported in this browser.')
+      return
+    }
+
+    if (listening) {
+      return
+    }
+
+    try {
+      recognitionRef.current.start()
+      setListening(true)
+      setSpeechStatus('Listening for your question...')
+    } catch (error) {
+      setSpeechError('Could not start voice capture.')
+      setListening(false)
+    }
+  }
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+    }
+    setListening(false)
+    setSpeechStatus('idle')
   }
 
   const speakText = (text, label) => {
@@ -324,6 +419,57 @@ function App() {
                   Ask DocuCast AI
                 </button>
               </form>
+
+              <div className="mt-4 rounded-[1.5rem] border border-slate-800 bg-slate-950/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm uppercase tracking-[0.35em] text-cyan-300/80">Voice assistant</p>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-medium ${recognitionSupported ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-800 text-slate-400'}`}>
+                    {recognitionSupported ? 'Microphone ready' : 'Voice unavailable'}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    disabled={!recognitionSupported || listening}
+                    onClick={startListening}
+                    className="rounded-full border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Ask by voice
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!listening}
+                    onClick={stopListening}
+                    className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Stop listening
+                  </button>
+                </div>
+                {listening && (
+                  <p className="mt-3 text-sm text-cyan-300">Listening... speak your question clearly.</p>
+                )}
+                {voicePrompt && (
+                  <p className="mt-3 text-sm text-slate-300">Heard: {voicePrompt}</p>
+                )}
+                {speechError && (
+                  <p className="mt-3 text-sm text-rose-300">{speechError}</p>
+                )}
+              </div>
+
+              {result?.chatPrompts?.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {result.chatPrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => sendChat(prompt, true)}
+                      className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-cyan-300"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {chatAnswer && (
                 <div className="mt-5 rounded-[1.25rem] border border-slate-800 bg-slate-950/70 p-4">
