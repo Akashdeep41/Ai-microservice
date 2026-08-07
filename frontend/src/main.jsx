@@ -13,10 +13,14 @@ const eventLogger = (event, error) => {
   }
 }
 
+// Use Vite env var VITE_USE_KEYCLOAK to toggle real Keycloak in development.
+const enableKeycloak = import.meta.env.VITE_USE_KEYCLOAK === 'true'
+const initOptions = enableKeycloak ? { onLoad: 'login-required' } : { onLoad: 'check-sso' }
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <ReactKeycloakProvider
     authClient={keycloak}
-    initOptions={{ onLoad: 'login-required' }}
+    initOptions={initOptions}
     onEvent={eventLogger}
     onTokens={() => {}}
   >

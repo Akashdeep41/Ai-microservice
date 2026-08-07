@@ -109,12 +109,12 @@ function App() {
 
   const handleUpload = async (event) => {
     event.preventDefault()
-    if (!file || !keycloak.authenticated) {
+    if (!file) {
       setStatus({
         loading: false,
         tone: 'warning',
         title: 'Upload blocked',
-        message: 'Please sign in and choose a PDF file to continue.',
+        message: 'Please choose a PDF or text file to continue.',
       })
       return
     }
@@ -131,12 +131,11 @@ function App() {
     formData.append('file', file)
 
     try {
-      const response = await axios.post('/api/documents/upload', formData, {
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-          'Content-Type': 'multipart/form-data',
-        },
-      })
+      const headers = { 'Content-Type': 'multipart/form-data' }
+      if (keycloak?.authenticated && keycloak?.token) {
+        headers.Authorization = `Bearer ${keycloak.token}`
+      }
+      const response = await axios.post('/api/documents/upload', formData, { headers })
 
       setResult(response.data)
       setChatAnswer('')
@@ -164,14 +163,14 @@ function App() {
     }
 
     try {
+      const chatHeaders = {}
+      if (keycloak?.authenticated && keycloak?.token) {
+        chatHeaders.Authorization = `Bearer ${keycloak.token}`
+      }
       const response = await axios.post('/api/documents/chat', {
         documentId: result.id,
         question,
-      }, {
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-      })
+      }, { headers: chatHeaders })
 
       const answer = response.data.answer
       setChatAnswer(answer)

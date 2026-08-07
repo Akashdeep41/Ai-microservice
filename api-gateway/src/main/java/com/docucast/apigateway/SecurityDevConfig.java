@@ -9,16 +9,13 @@ import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 @EnableWebSecurity
-@Profile("!dev")
-public class SecurityConfig {
+@Profile("dev")
+public class SecurityDevConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable())
-            // Require authentication for document APIs in non-dev profiles
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/documents/**").authenticated()
-                .anyRequest().permitAll()
-            );
+            // Disable security entirely for local development/testing convenience
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
     }
 }
